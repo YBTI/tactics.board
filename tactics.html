@@ -1,0 +1,587 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Soccer Tactics Board v4.0</title>
+    <style>
+        :root {
+            --bg-color: #222;
+            --text-color: #eee;
+            --pitch-color: #4da654;
+            --accent-color: #3498db;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Helvetica Neue", Arial, sans-serif;
+            background: var(--bg-color);
+            color: var(--text-color);
+            margin: 0;
+            padding: 10px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            /* スマホでのバウンススクロール防止 */
+            overscroll-behavior: none; 
+        }
+
+        h1 { margin: 5px 0 15px 0; font-size: 20px; text-align: center; }
+
+        /* レイアウト: PCは横並び、スマホは縦並び */
+        .main-container {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 20px;
+            width: 100%;
+            max-width: 1000px;
+            justify-content: center;
+            align-items: flex-start;
+        }
+
+        /* ツールバー */
+        .sidebar {
+            background: #333;
+            padding: 15px;
+            border-radius: 8px;
+            width: 100%; /* スマホデフォルト */
+            max-width: 350px; /* PCでの最大幅 */
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.3);
+        }
+
+        /* キャンバスエリア */
+        .canvas-area {
+            width: 100%;
+            max-width: 800px; /* PCでの最大幅 */
+            position: relative;
+        }
+
+        /* Canvasのレスポンシブ設定 */
+        canvas {
+            background-color: var(--pitch-color);
+            border: 2px solid white;
+            border-radius: 4px;
+            cursor: crosshair;
+            box-shadow: 0 10px 20px rgba(0,0,0,0.5);
+            
+            /* ここが重要: 内部解像度を保ったまま見た目だけ縮小 */
+            width: 100%; 
+            height: auto; 
+            display: block;
+            touch-action: none; /* スマホでスクロール干渉を防ぐ */
+        }
+
+        /* コントロール周り */
+        .control-group {
+            border-bottom: 1px solid #555;
+            padding-bottom: 10px;
+        }
+        .control-group:last-child { border-bottom: none; }
+        
+        h3 { margin: 0 0 8px 0; font-size: 14px; color: #aaa; text-transform: uppercase; }
+
+        .btn-grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 5px;
+        }
+
+        button {
+            width: 100%;
+            padding: 8px 4px;
+            cursor: pointer;
+            border: none;
+            border-radius: 4px;
+            font-weight: bold;
+            font-size: 11px;
+            transition: opacity 0.2s;
+        }
+        button:hover { opacity: 0.8; }
+        button:active { transform: scale(0.98); }
+
+        .btn-home { background-color: #e74c3c; color: white; }
+        .btn-away { background-color: #3498db; color: white; }
+        .btn-gk { border: 2px solid #f1c40f; color: #f1c40f; background: transparent; }
+        .btn-cone { background-color: #e67e22; color: white; grid-column: span 4; margin-top: 5px;}
+        .btn-save { background-color: #2ecc71; color: white; font-size: 14px; padding: 10px; margin-bottom: 5px;}
+        .btn-gray { background-color: #7f8c8d; color: white; }
+        .btn-danger { background-color: #c0392b; color: white; }
+
+        .radio-list {
+            display: flex;
+            flex-wrap: wrap; /* スマホで折り返し */
+            gap: 10px;
+        }
+        .radio-label {
+            display: flex;
+            align-items: center;
+            cursor: pointer;
+            font-size: 13px;
+            background: #444;
+            padding: 6px 10px;
+            border-radius: 20px;
+        }
+        .radio-label input { margin-right: 5px; }
+        .radio-label:has(input:checked) { background: #666; border: 1px solid #aaa; }
+
+        .trash-info { font-size: 10px; color: #aaa; text-align: center; margin-top: 5px; }
+
+        /* PC画面向けのレイアウト調整 */
+        @media (min-width: 850px) {
+            .sidebar { width: 250px; }
+            .btn-grid { grid-template-columns: 1fr 1fr; }
+            .btn-cone { grid-column: span 2; }
+            .radio-list { flex-direction: column; gap: 5px; }
+            .radio-label { background: transparent; border-radius: 0; padding: 4px; }
+            .radio-label:has(input:checked) { background: transparent; border: none; font-weight: bold; color: white; }
+        }
+    </style>
+</head>
+<body>
+
+    <h1>⚽️ Tactics Board v4.0</h1>
+
+    <div class="main-container">
+        <div class="canvas-area">
+            <canvas id="tacticsBoard" width="800" height="520"></canvas>
+        </div>
+
+        <div class="sidebar">
+            
+            <div class="control-group">
+                <button class="btn-save" onclick="downloadImage()">📷 画像として保存</button>
+            </div>
+
+            <div class="control-group">
+                <h3>Tools</h3>
+                <div class="radio-list">
+                    <label class="radio-label"><input type="radio" name="tool" value="move" checked onchange="setTool('move')">✋ 移動</label>
+                    <label class="radio-label"><input type="radio" name="tool" value="arrow-solid" onchange="setTool('arrow-solid')">── パス</label>
+                    <label class="radio-label"><input type="radio" name="tool" value="arrow-curve" onchange="setTool('arrow-curve')">⤴ ロング</label>
+                    <label class="radio-label"><input type="radio" name="tool" value="arrow-dashed" onchange="setTool('arrow-dashed')">- - ラン</label>
+                    <label class="radio-label"><input type="radio" name="tool" value="arrow-wave" onchange="setTool('arrow-wave')">〰 ドリブル</label>
+                </div>
+            </div>
+
+            <div class="control-group">
+                <h3>Players</h3>
+                <div class="btn-grid">
+                    <button class="btn-home" onclick="addPlayer('home', 'FW')">H-FW</button>
+                    <button class="btn-home" onclick="addPlayer('home', 'MF')">H-MF</button>
+                    <button class="btn-home" onclick="addPlayer('home', 'DF')">H-DF</button>
+                    <button class="btn-gk" onclick="addPlayer('home', 'GK')">H-GK</button>
+                    <button class="btn-away" onclick="addPlayer('away', 'FW')">A-FW</button>
+                    <button class="btn-away" onclick="addPlayer('away', 'MF')">A-MF</button>
+                    <button class="btn-away" onclick="addPlayer('away', 'DF')">A-DF</button>
+                    <button class="btn-gk" onclick="addPlayer('away', 'GK')">A-GK</button>
+                    <button class="btn-cone" onclick="addCone()">▲ コーン追加</button>
+                </div>
+            </div>
+
+            <div class="control-group">
+                <div style="display:flex; gap:5px;">
+                    <button class="btn-gray" onclick="undoArrow()">矢印戻す</button>
+                    <button class="btn-gray" onclick="clearArrows()">矢印クリア</button>
+                </div>
+                <button class="btn-danger" onclick="resetBoard()" style="margin-top:5px;">全リセット</button>
+                <div class="trash-info">削除: ダブルクリック / ダブルタップ</div>
+            </div>
+        </div>
+    </div>
+
+<script>
+    /** 設定・定数 **/
+    const canvas = document.getElementById('tacticsBoard');
+    const ctx = canvas.getContext('2d');
+
+    const COLORS = {
+        pitch: '#4da654',
+        line: 'rgba(255, 255, 255, 0.9)',
+        home: '#e74c3c',
+        away: '#3498db',
+        gk: '#f1c40f',
+        cone: '#e67e22',
+        arrow: '#ffff00'
+    };
+
+    /** 状態管理 **/
+    let objects = []; 
+    let arrows = [];
+    let currentTool = 'move';
+    
+    // 操作用
+    let isDragging = false;
+    let selectedObj = null;
+    let isDrawingArrow = false;
+    let arrowStartPos = null;
+
+    // ダブルタップ判定用（スマホ用）
+    let lastTapTime = 0;
+
+    /** 初期化処理 **/
+    function init() {
+        loadData(); // ローカルストレージから読み込み
+        draw();
+        
+        // 自動保存ループ
+        setInterval(saveData, 2000);
+    }
+
+    /** 座標変換（重要: CSSで縮小された座標をCanvas内部座標800x520に変換） **/
+    function getPos(e) {
+        const rect = canvas.getBoundingClientRect();
+        // タッチイベントかマウスイベントか
+        const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+        const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+
+        const scaleX = canvas.width / rect.width;
+        const scaleY = canvas.height / rect.height;
+
+        return {
+            x: (clientX - rect.left) * scaleX,
+            y: (clientY - rect.top) * scaleY
+        };
+    }
+
+    /** マウス & タッチイベント共通処理 **/
+    function handleStart(x, y) {
+        // オブジェクト選択判定
+        const clickedObj = [...objects].reverse().find(o => {
+            const dx = x - o.x;
+            const dy = y - o.y;
+            return Math.sqrt(dx*dx + dy*dy) < (o.radius + 10); // 少し判定広めに
+        });
+
+        if (currentTool === 'move') {
+            if (clickedObj) {
+                isDragging = true;
+                selectedObj = clickedObj;
+            }
+        } else {
+            isDrawingArrow = true;
+            arrowStartPos = { x, y };
+        }
+    }
+
+    function handleMove(x, y) {
+        if (isDragging && selectedObj) {
+            selectedObj.x = x;
+            selectedObj.y = y;
+            draw();
+        } else if (isDrawingArrow && arrowStartPos) {
+            draw(); 
+            drawArrowGraphic(arrowStartPos.x, arrowStartPos.y, x, y, currentTool);
+        }
+    }
+
+    function handleEnd(x, y) {
+        if (isDrawingArrow && arrowStartPos) {
+            // x, y が渡されない場合（touchendなど）もあるので注意が必要ですが、
+            // ここでは簡易的に直前の描画位置を利用する設計、またはtouchendでは座標が取れないため
+            // touchmoveの最後の座標を保存しておく必要があります。
+            // 簡略化のため、touchmoveなしのタップだけの線は引けない仕様とします。
+        }
+        
+        // マウスアップ時の座標取得が難しいため、
+        // 実際の実装では `handleMove` で更新した「最後の座標」を使いますが、
+        // HTML Canvasの `mouseup` は座標取れます。 `touchend` は changedTouches を見ます。
+    }
+
+    /** イベントリスナー登録 (マウス & タッチ) **/
+    
+    // Mouse Events
+    canvas.addEventListener('mousedown', (e) => {
+        const p = getPos(e);
+        handleStart(p.x, p.y);
+    });
+    canvas.addEventListener('mousemove', (e) => {
+        const p = getPos(e);
+        handleMove(p.x, p.y);
+    });
+    canvas.addEventListener('mouseup', (e) => {
+        const p = getPos(e);
+        finishAction(p.x, p.y);
+    });
+
+    // Touch Events (スマホ対応)
+    canvas.addEventListener('touchstart', (e) => {
+        if(e.touches.length > 1) return; // ピンチズーム等は許可
+        e.preventDefault(); // スクロール防止
+        const p = getPos(e);
+        
+        // ダブルタップ判定
+        const currentTime = new Date().getTime();
+        const tapLength = currentTime - lastTapTime;
+        if (tapLength < 300 && tapLength > 0) {
+            // ダブルタップ成功 -> 削除処理へ
+            handleDoubleClick(p.x, p.y);
+            e.preventDefault();
+        }
+        lastTapTime = currentTime;
+
+        handleStart(p.x, p.y);
+    }, { passive: false });
+
+    canvas.addEventListener('touchmove', (e) => {
+        e.preventDefault(); // スクロール防止
+        const p = getPos(e);
+        handleMove(p.x, p.y);
+    }, { passive: false });
+
+    canvas.addEventListener('touchend', (e) => {
+        // touchendでは clientXが取れないので、changedTouchesを使う
+        const touch = e.changedTouches[0];
+        const rect = canvas.getBoundingClientRect();
+        const scaleX = canvas.width / rect.width;
+        const scaleY = canvas.height / rect.height;
+        const x = (touch.clientX - rect.left) * scaleX;
+        const y = (touch.clientY - rect.top) * scaleY;
+        
+        finishAction(x, y);
+    });
+
+    // アクション終了共通処理
+    function finishAction(x, y) {
+        if (isDrawingArrow && arrowStartPos) {
+            // 始点と終点がほぼ同じなら描かない（誤クリック防止）
+            const dist = Math.sqrt((x - arrowStartPos.x)**2 + (y - arrowStartPos.y)**2);
+            if(dist > 10) {
+                arrows.push({
+                    sx: arrowStartPos.x,
+                    sy: arrowStartPos.y,
+                    ex: x,
+                    ey: y,
+                    type: currentTool
+                });
+            }
+        }
+        isDragging = false;
+        selectedObj = null;
+        isDrawingArrow = false;
+        arrowStartPos = null;
+        draw();
+        saveData();
+    }
+
+    // ダブルクリック削除
+    canvas.addEventListener('dblclick', (e) => {
+        const p = getPos(e);
+        handleDoubleClick(p.x, p.y);
+    });
+
+    function handleDoubleClick(x, y) {
+        if (currentTool !== 'move') return;
+        const idx = objects.findIndex(o => {
+            const dx = x - o.x;
+            const dy = y - o.y;
+            return Math.sqrt(dx*dx + dy*dy) < (o.radius + 10);
+        });
+        if (idx !== -1) {
+            objects.splice(idx, 1);
+            draw();
+            saveData();
+        }
+    }
+
+
+    /** 機能関数群 **/
+
+    function addPlayer(team, positionLabel) {
+        let color = (team === 'home') ? COLORS.home : COLORS.away;
+        if (positionLabel === 'GK') color = COLORS.gk;
+        const offsetX = (Math.random() * 60) - 30;
+        const offsetY = (Math.random() * 60) - 30;
+        objects.push({
+            id: Date.now(),
+            type: 'player',
+            label: positionLabel,
+            team: team,
+            color: color,
+            x: 400 + offsetX,
+            y: 260 + offsetY,
+            radius: 15
+        });
+        draw();
+        saveData();
+    }
+
+    function addCone() {
+        objects.push({
+            id: Date.now(),
+            type: 'cone',
+            x: 400 + (Math.random() * 40 - 20),
+            y: 260 + (Math.random() * 40 - 20),
+            color: COLORS.cone,
+            radius: 12
+        });
+        draw();
+        saveData();
+    }
+
+    function setTool(tool) { currentTool = tool; }
+    function undoArrow() { arrows.pop(); draw(); saveData(); }
+    function clearArrows() { arrows = []; draw(); saveData(); }
+    function resetBoard() {
+        if(confirm("すべて削除しますか？")) {
+            objects = [];
+            arrows = [];
+            draw();
+            saveData();
+        }
+    }
+
+    /** 保存機能 **/
+    
+    // 1. 画像保存
+    function downloadImage() {
+        // 背景を描画してから保存しないと透過pngになる場合があるため、一度draw()内で背景塗ってるのでOK
+        const link = document.createElement('a');
+        link.download = 'tactics_board.png';
+        link.href = canvas.toDataURL();
+        link.click();
+    }
+
+    // 2. ブラウザ保存 (Local Storage)
+    function saveData() {
+        const data = { objects: objects, arrows: arrows };
+        localStorage.setItem('tacticsData', JSON.stringify(data));
+    }
+
+    function loadData() {
+        const data = localStorage.getItem('tacticsData');
+        if (data) {
+            try {
+                const parsed = JSON.parse(data);
+                if(parsed.objects) objects = parsed.objects;
+                if(parsed.arrows) arrows = parsed.arrows;
+            } catch(e) {
+                console.error("Save data corrupted");
+            }
+        }
+    }
+
+    /** 描画ロジック (v3と同じ) **/
+    function draw() {
+        ctx.fillStyle = COLORS.pitch;
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        drawPitchLines();
+        arrows.forEach(a => drawArrowGraphic(a.sx, a.sy, a.ex, a.ey, a.type));
+        if (isDrawingArrow && arrowStartPos) {
+            // mousemove/touchmoveでプレビュー描画済みだが、再描画時に消えないようここでも呼ぶ必要はない
+            // なぜならmoveイベントで draw() -> drawArrowGraphic(preview) の順に呼ぶため。
+        }
+        objects.forEach(obj => {
+            if (obj.type === 'cone') drawCone(obj);
+            else drawPlayer(obj);
+        });
+    }
+
+    function drawPitchLines() {
+        ctx.strokeStyle = COLORS.line;
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        const m = 30;
+        const w = canvas.width - m * 2;
+        const h = canvas.height - m * 2;
+        ctx.strokeRect(m, m, w, h);
+        ctx.moveTo(canvas.width / 2, m);
+        ctx.lineTo(canvas.width / 2, canvas.height - m);
+        ctx.moveTo(canvas.width / 2 + 60, canvas.height / 2);
+        ctx.arc(canvas.width / 2, canvas.height / 2, 60, 0, Math.PI * 2);
+        ctx.strokeRect(m, canvas.height/2 - 90, 100, 180);
+        ctx.strokeRect(canvas.width - m - 100, canvas.height/2 - 90, 100, 180);
+        ctx.strokeRect(m, canvas.height/2 - 35, 40, 70);
+        ctx.strokeRect(canvas.width - m - 40, canvas.height/2 - 35, 40, 70);
+        ctx.stroke();
+    }
+
+    function drawPlayer(p) {
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, p.radius, 0, Math.PI * 2);
+        ctx.fillStyle = p.color;
+        ctx.fill();
+        ctx.strokeStyle = 'white';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+        ctx.fillStyle = (p.label === 'GK') ? 'black' : 'white';
+        ctx.font = 'bold 11px Arial';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(p.label, p.x, p.y);
+    }
+
+    function drawCone(c) {
+        ctx.fillStyle = c.color;
+        ctx.strokeStyle = 'white';
+        ctx.lineWidth = 1;
+        const size = 18;
+        ctx.beginPath();
+        ctx.moveTo(c.x, c.y - size);
+        ctx.lineTo(c.x + size/1.5, c.y + size/2);
+        ctx.lineTo(c.x - size/1.5, c.y + size/2);
+        ctx.closePath();
+        ctx.fill();
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.rect(c.x - 10, c.y + size/2, 20, 3);
+        ctx.fillStyle = '#d35400';
+        ctx.fill();
+    }
+
+    function drawArrowGraphic(sx, sy, ex, ey, type) {
+        ctx.strokeStyle = COLORS.arrow;
+        ctx.fillStyle = COLORS.arrow;
+        ctx.lineWidth = 3;
+        ctx.lineCap = 'round';
+        ctx.setLineDash([]);
+        let angle = Math.atan2(ey - sy, ex - sx);
+        ctx.beginPath();
+
+        if (type === 'arrow-curve') {
+            const mx = (sx + ex) / 2;
+            const my = (sy + ey) / 2;
+            const dx = ex - sx;
+            const dy = ey - sy;
+            const cx = mx - dy * 0.2; 
+            const cy = my + dx * 0.2;
+            ctx.moveTo(sx, sy);
+            ctx.quadraticCurveTo(cx, cy, ex, ey);
+            ctx.stroke();
+            angle = Math.atan2(ey - cy, ex - cx);
+        } else if (type === 'arrow-dashed') {
+            ctx.setLineDash([8, 8]);
+            ctx.moveTo(sx, sy);
+            ctx.lineTo(ex, ey);
+            ctx.stroke();
+        } else if (type === 'arrow-wave') {
+            const dist = Math.sqrt((ex-sx)**2 + (ey-sy)**2);
+            const freq = 0.15;
+            const amp = 4;
+            ctx.save();
+            ctx.translate(sx, sy);
+            ctx.rotate(angle);
+            ctx.beginPath();
+            ctx.moveTo(0, 0);
+            for (let i = 0; i <= dist; i+=5) ctx.lineTo(i, Math.sin(i * freq) * amp);
+            ctx.stroke();
+            ctx.restore();
+        } else {
+            ctx.moveTo(sx, sy);
+            ctx.lineTo(ex, ey);
+            ctx.stroke();
+        }
+        ctx.setLineDash([]);
+        ctx.beginPath();
+        ctx.moveTo(ex, ey);
+        ctx.lineTo(ex - 12 * Math.cos(angle - Math.PI / 6), ey - 12 * Math.sin(angle - Math.PI / 6));
+        ctx.lineTo(ex - 12 * Math.cos(angle + Math.PI / 6), ey - 12 * Math.sin(angle + Math.PI / 6));
+        ctx.lineTo(ex, ey);
+        ctx.fill();
+    }
+
+    init();
+</script>
+</body>
+</html>
